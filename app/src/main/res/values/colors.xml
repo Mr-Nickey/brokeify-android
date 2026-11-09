@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="brokeify_bg">#070A0F</color>
+    <color name="brokeify_emerald">#00FF66</color>
+    <color name="brokeify_cyan">#38BDF8</color>
+    <color name="brokeify_surface">#0D131C</color>
+    <color name="brokeify_titlebar">#1E293B</color>
+</resources>

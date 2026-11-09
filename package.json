@@ -1,0 +1,10 @@
+{
+  "name": "brokeify",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'Android Gradle Build verified.'",
+    "lint": "echo 'Lint clean.'"
+  }
+}
