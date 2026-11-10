@@ -1,16 +1,10 @@
 package com.example.brokeify.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CarRepair
-import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,14 +36,20 @@ fun AudioLabScreen(
             .testTag("audio_lab_screen"),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header
-        Text(
-            text = "AUDIO LAB // 5-BAND DSP & VAULT",
-            color = Color(0xFF38BDF8),
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp
-        )
+        Column {
+            Text(
+                text = "AUDIO LAB // 5-BAND DSP",
+                color = Color(0xFF38BDF8),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+            Text(
+                text = "Hardware-inspired graphic equalizer and dynamic loudness leveler.",
+                color = Color(0xFF94A3B8),
+                fontSize = 12.sp
+            )
+        }
 
         // Equalizer Card
         Card(
@@ -64,10 +64,11 @@ fun AudioLabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "5-BAND GRAPHIC EQUALIZER",
+                        text = "GRAPHIC EQUALIZER",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = uiState.audioPrefs.eqPreset.displayName,
@@ -158,7 +159,8 @@ fun AudioLabScreen(
                     text = "LOUDNESS STABILIZATION & LEVELING",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace
                 )
 
                 // EBU R128 LUFS Normalization
@@ -175,7 +177,7 @@ fun AudioLabScreen(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "Matches streaming volume across mixed 320kbps MP3 & 24-bit FLAC libraries (-14 LUFS target).",
+                            text = "Matches streaming volume across library tracks (-14 LUFS target).",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp
                         )
@@ -209,7 +211,7 @@ fun AudioLabScreen(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "Applies 3:1 dynamic compressor to boost quiet vocals over highway tire noise.",
+                            text = "Dynamic audio compression to keep quiet vocals audible over highway cabin noise.",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp
                         )
@@ -255,45 +257,6 @@ fun AudioLabScreen(
                             inactiveTrackColor = Color(0xFF1E293B)
                         ),
                         modifier = Modifier.testTag("crossfade_slider")
-                    )
-                }
-            }
-        }
-
-        // Offline Vault Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D131C)),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Default.Storage, contentDescription = null, tint = Color(0xFF00FF66))
-                    Text(
-                        text = "OFFLINE VAULT // PERSISTENT CACHE",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
-                Text(
-                    text = "Protects upcoming tracks against highway cell tunnel dropouts. Automatically caches up to 5 tracks ahead in lossless audio.",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp
-                )
-                Surface(
-                    color = Color(0xFF00FF66).copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = "Status: 6 Tracks Cached (184 MB in Vault) • Zero-Logout Guard Active",
-                        color = Color(0xFF00FF66),
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(8.dp)
                     )
                 }
             }

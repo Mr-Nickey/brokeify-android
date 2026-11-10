@@ -2,7 +2,6 @@ package com.example.brokeify.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,17 +34,18 @@ fun CarModeScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF040609))
-            .padding(20.dp)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
             .testTag("car_mode_screen"),
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Cockpit Top Bar
+        // Cockpit Top Bar (Safely inset below system status bar & camera cutout)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF0D131C), shape = RoundedCornerShape(16.dp))
-                .border(2.dp, Color(0xFF00FF66).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -69,27 +69,28 @@ fun CarModeScreen(
                 }
                 Column {
                     Text(
-                        text = "CAR DECK // ROAD SAFETY MODE",
+                        text = "CAR DECK // DRIVING MODE",
                         color = Color(0xFF00FF66),
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp
                     )
                     Text(
-                        text = "High-Tactile Cockpit Controls",
+                        text = if (uiState.gatewayConfig.serverUrl.isNotBlank()) "Brokeify Native Stream" else "Offline",
                         color = Color(0xFF94A3B8),
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
             }
 
-            // Exit Button
+            // Exit Button (48dp touch target)
             Button(
                 onClick = { viewModel.toggleCarMode() },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
-                    .height(44.dp)
+                    .height(48.dp)
                     .testTag("car_mode_exit_btn")
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Exit Car Mode", tint = Color.White)
@@ -105,24 +106,25 @@ fun CarModeScreen(
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
         ) {
-            // Speedometer-style Stream Indicator
+            // Stream and Leveler Indicators
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    color = Color(0xFF00FF66).copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(6.dp),
-                    border = ButtonDefaults.outlinedButtonBorder
-                ) {
-                    Text(
-                        text = track?.format ?: "FLAC LOSSLESS",
-                        color = Color(0xFF00FF66),
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
+                if (track != null && track.format.isNotBlank()) {
+                    Surface(
+                        color = Color(0xFF00FF66).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = track.format,
+                            color = Color(0xFF00FF66),
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
                 }
 
                 Surface(
@@ -143,7 +145,7 @@ fun CarModeScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = track?.title ?: "Select Track",
+                text = track?.title ?: "No Track Selected",
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 28.sp,
@@ -155,7 +157,7 @@ fun CarModeScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "${track?.artist ?: ""} — ${track?.album ?: ""}",
+                text = if (track != null) "${track.artist} — ${track.album}" else "Select a song from Library",
                 color = Color(0xFF00FF66),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -163,18 +165,9 @@ fun CarModeScreen(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = track?.sourceName ?: "",
-                color = Color(0xFF94A3B8),
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace
-            )
         }
 
-        // Giant Driving Transport Controls (Massive 80dp play button, 64dp next/prev)
+        // Giant Driving Transport Controls (88dp play button, 68dp next/prev, 56dp favorite)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -231,6 +224,32 @@ fun CarModeScreen(
                     modifier = Modifier.size(38.dp)
                 )
             }
+
+            // Like / Favorite in Car Mode
+            if (track != null) {
+                IconButton(
+                    onClick = { viewModel.toggleLikeTrack(track.id) },
+                    modifier = Modifier
+                        .size(58.dp)
+                        .background(
+                            if (track.isLiked) Color(0xFFEC4899).copy(alpha = 0.2f) else Color(0xFF0D131C),
+                            shape = CircleShape
+                        )
+                        .border(
+                            2.dp,
+                            if (track.isLiked) Color(0xFFEC4899) else Color(0xFF27272A),
+                            CircleShape
+                        )
+                        .testTag("car_mode_like_btn")
+                ) {
+                    Icon(
+                        imageVector = if (track.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (track.isLiked) "Unlike Track" else "Like Track",
+                        tint = if (track.isLiked) Color(0xFFEC4899) else Color(0xFF94A3B8),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
         }
 
         // Cockpit Quick Presets
@@ -239,7 +258,7 @@ fun CarModeScreen(
                 text = "DRIVING EQUALIZER PRESET",
                 color = Color(0xFF94A3B8),
                 fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 

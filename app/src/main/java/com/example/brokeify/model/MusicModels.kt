@@ -1,12 +1,7 @@
 package com.example.brokeify.model
 
 enum class ProviderType(val displayName: String) {
-    JELLYFIN("Jellyfin"),
-    EMBY("Emby"),
-    NAVIDROME("Navidrome"),
-    PLEX("Plex"),
-    RADIO_BROWSER("Radio-Browser"),
-    INTERNET_ARCHIVE("Internet Archive")
+    BROKEIFY_GATEWAY("Brokeify Gateway")
 }
 
 enum class ProviderStatus {
@@ -17,9 +12,9 @@ enum class ProviderStatus {
 }
 
 data class ProviderConfig(
-    val id: String,
-    val type: ProviderType,
-    val name: String,
+    val id: String = "prov-brokeify-gateway",
+    val type: ProviderType = ProviderType.BROKEIFY_GATEWAY,
+    val name: String = "Brokeify Native Engine",
     val enabled: Boolean = true,
     val serverUrl: String = "",
     val username: String = "",
@@ -27,8 +22,12 @@ data class ProviderConfig(
     val userId: String = "",
     val status: ProviderStatus = ProviderStatus.DISCONNECTED,
     val lastMessage: String = "",
+    val latencyMs: Long = 0,
     val trackCount: Int = 0,
-    val playlistCount: Int = 0
+    val albumCount: Int = 0,
+    val artistCount: Int = 0,
+    val playlistCount: Int = 0,
+    val version: String = ""
 )
 
 data class Track(
@@ -37,25 +36,29 @@ data class Track(
     val artist: String,
     val album: String,
     val durationSec: Int,
-    val source: ProviderType,
-    val sourceName: String,
+    val source: ProviderType = ProviderType.BROKEIFY_GATEWAY,
+    val sourceName: String = "Brokeify",
     val streamUrl: String = "",
+    val fallbackStreamUrl: String = "",
     val artworkUrl: String = "",
     val accentColor: Long = 0xFF00FF66,
-    val genre: String = "Electronic",
-    val bpm: Int = 120,
+    val genre: String = "",
+    val bpm: Int = 0,
     val playCount: Int = 0,
     val isLiveStream: Boolean = false,
-    val format: String = "FLAC 24-bit"
+    val format: String = "FLAC",
+    val bitrateKbps: Int = 0,
+    val sampleRate: Int = 0,
+    val isLiked: Boolean = false
 )
 
 data class Playlist(
     val id: String,
     val name: String,
-    val description: String,
-    val trackIds: List<String>,
+    val description: String = "",
+    val trackIds: List<String> = emptyList(),
     val coverAccent: Long = 0xFF00FF66,
-    val linkedSpotifyUrl: String? = null
+    val isFavorite: Boolean = false
 )
 
 enum class EQPresetName(val displayName: String) {
@@ -92,11 +95,11 @@ enum class VisualTheme(
     val description: String
 ) {
     CYBER_DECK("Cyber Deck '99", true, 0xFF070A0F, 0xFF00FF66, 0xFF0D131C, "Obsidian stereo rack with phosphor emerald LCD readouts"),
-    CLASSIC_RACK("Classic Stereo '98", true, 0xFF0A0C10, 0xFFFBBF24, 0xFF18181B, "Late-90s charcoal deck with warm gold-tinted meters"),
-    MODULAR_BENTO("Modular Studio", true, 0xFF060913, 0xFF38BDF8, 0xFF0F172A, "High-density slate studio with electric cyan"),
-    AMBER_CRT("Amber Phosphor", true, 0xFF0C0804, 0xFFF59E0B, 0xFF1E140A, "Warm vintage amber CRT monitor filter for night driving"),
+    CLASSIC_RACK("Classic Stereo '98", true, 0xFF0A0C10, 0xFFFBBF24, 0xFF18181B, "Charcoal component deck with warm gold-tinted meters"),
+    MODULAR_BENTO("Modular Studio", true, 0xFF060913, 0xFF38BDF8, 0xFF0F172A, "Slate studio panels with electric cyan readouts"),
+    AMBER_CRT("Amber Phosphor", true, 0xFF0C0804, 0xFFF59E0B, 0xFF1E140A, "Vintage amber CRT monitor filter for night driving"),
     PLATINUM_LIGHT("Platinum '99", false, 0xFFE2E8F0, 0xFF059669, 0xFFF8FAFC, "Brushed silver desktop skin with dark LCD scopes"),
-    SOLAR_LIGHT("Solar Daylight", false, 0xFFF8FAFC, 0xFF0284C7, 0xFFFFFFFF, "Warm ivory & glacier-blue daytime cabin skin")
+    SOLAR_LIGHT("Solar Daylight", false, 0xFFF8FAFC, 0xFF0284C7, 0xFFFFFFFF, "Ivory & glacier-blue daytime cabin skin")
 }
 
 data class AudioPreferences(
@@ -109,22 +112,14 @@ data class AudioPreferences(
     val smartAntiRepeat: Boolean = true
 )
 
-enum class SlskdJobStatus(val label: String) {
-    QUEUED("Queued"),
-    SEARCHING("Searching Peers"),
-    DOWNLOADING("Downloading FLAC"),
-    COMPLETED("Ready in Vault"),
-    FAILED("Error")
-}
-
-data class SlskdJob(
-    val id: String,
+data class TrackPlayStat(
+    val trackId: String,
     val title: String,
     val artist: String,
-    val status: SlskdJobStatus,
-    val speedKbps: Int = 850,
-    val progressPercent: Int = 0,
-    val peerUsername: String = "soulseek_master_44"
+    val album: String,
+    val playCount: Int = 0,
+    val totalSeconds: Long = 0L,
+    val lastPlayedTime: String = ""
 )
 
 enum class LogLevel {

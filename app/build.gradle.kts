@@ -70,5 +70,13 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.play.services.code.scanner)
+    implementation(libs.zxing.android.embedded)
 }
