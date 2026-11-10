@@ -132,8 +132,53 @@ fun LibraryScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Empty State with instant 6-Digit Quick Connect & QR Scanner shortcut when not connected
-        if (!isConnected || uiState.tracks.isEmpty()) {
+        // Offline Room Cache Active Banner
+        if (!isConnected && uiState.tracks.isNotEmpty()) {
+            Surface(
+                color = Color(0xFFF59E0B).copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = "Offline Cache",
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "OFFLINE CACHE ACTIVE",
+                            color = Color(0xFFF59E0B),
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = "Browsing saved tracks & favorite playlists from local Room database.",
+                            color = Color(0xFFFDE68A),
+                            fontSize = 10.sp
+                        )
+                    }
+                    TextButton(
+                        onClick = { viewModel.refreshLibrary() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("Reconnect", color = Color(0xFF00FF66), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+        }
+
+        // Empty State when not connected AND no local Room cache is present
+        if (!isConnected && uiState.tracks.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -388,14 +433,7 @@ fun LibraryScreen(
                                 isFavorite = isFav,
                                 onToggleFavorite = { viewModel.toggleFavoritePlaylist(playlist.id) },
                                 onPlay = {
-                                    val playlistTracks = uiState.tracks.filter { it.id in playlist.trackIds }
-                                    val firstTrack = playlistTracks.firstOrNull() ?: uiState.tracks.firstOrNull()
-                                    if (firstTrack != null) {
-                                        viewModel.playTrack(
-                                            firstTrack,
-                                            playlistTracks.ifEmpty { uiState.tracks }
-                                        )
-                                    }
+                                    viewModel.playPlaylist(playlist)
                                 }
                             )
                         }
@@ -469,11 +507,7 @@ fun LibraryScreen(
                                     isFavorite = true,
                                     onToggleFavorite = { viewModel.toggleFavoritePlaylist(playlist.id) },
                                     onPlay = {
-                                        val playlistTracks = uiState.tracks.filter { it.id in playlist.trackIds }
-                                        val firstTrack = playlistTracks.firstOrNull() ?: uiState.tracks.firstOrNull()
-                                        if (firstTrack != null) {
-                                            viewModel.playTrack(firstTrack, playlistTracks.ifEmpty { uiState.tracks })
-                                        }
+                                        viewModel.playPlaylist(playlist)
                                     }
                                 )
                             }

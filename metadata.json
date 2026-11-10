@@ -1,6 +1,6 @@
 {
   "name": "Brokeify",
-  "description": "Self-Hosted Music Client for Jellyfin with Car-Ready Audio Engine and Retro-HiFi Player Deck.",
+  "description": "Native Android client for the Brokeify Docker music server with offline Room database caching, continuous background playback, and retro-HiFi player deck.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -13,8 +13,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.example.brokeify.data.BrokeifyGatewayClient
 import com.example.brokeify.data.HealthCheckResult
 import com.example.brokeify.data.MusicRepository
+import com.example.brokeify.data.local.BrokeifyDatabase
+import com.example.brokeify.data.local.MusicCacheRepository
 import com.example.brokeify.model.*
 import com.example.brokeify.service.BrokeifyPlaybackService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,7 +58,11 @@ data class BrokeifyUiState(
     val isPollingPhonePin: Boolean = false,
     val isMiniPlayerDismissed: Boolean = false,
     val isReRunningSetup: Boolean = false,
-    val offlineTrackIds: Set<String> = emptySet()
+    val offlineTrackIds: Set<String> = emptySet(),
+    val isOfflineMode: Boolean = false,
+    val cachedTrackCount: Int = 0,
+    val cachedPlaylistCount: Int = 0,
+    val recentlyPlayedTracks: List<Track> = emptyList()
 ) {
     val jellyfinConfig: ProviderConfig get() = gatewayConfig
 }
@@ -63,6 +70,8 @@ data class BrokeifyUiState(
 class BrokeifyViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = MusicRepository(application)
     private val secureStorage = repository.secureStorage
+    private val cacheDatabase = BrokeifyDatabase.getInstance(application)
+    val cacheRepository = MusicCacheRepository(cacheDatabase.musicCacheDao())
 
     private var exoPlayer: ExoPlayer? = null
 
@@ -80,10 +89,54 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
     init {
         initExoPlayer(application)
         startPlaybackTicker()
+        observeRoomCache()
 
         // If credentials exist, automatically attempt to fetch library from Gateway
         if (secureStorage.serverUrl.isNotBlank()) {
             refreshLibrary()
+        }
+    }
+
+    private fun observeRoomCache() {
+        // Observe local Room cache for offline playback and quick cold-start load
+        viewModelScope.launch {
+            cacheRepository.allCachedTracks.collect { cachedTracks ->
+                if (cachedTracks.isNotEmpty()) {
+                    _uiState.update { state ->
+                        val shouldPopulate = state.tracks.isEmpty() || state.isOfflineMode ||
+                            state.gatewayConfig.status != ProviderStatus.CONNECTED
+                        state.copy(
+                            tracks = if (shouldPopulate) cachedTracks else state.tracks,
+                            cachedTrackCount = cachedTracks.size
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(cachedTrackCount = 0) }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            cacheRepository.allCachedPlaylists.collect { cachedPlaylists ->
+                if (cachedPlaylists.isNotEmpty()) {
+                    _uiState.update { state ->
+                        val shouldPopulate = state.playlists.isEmpty() || state.isOfflineMode ||
+                            state.gatewayConfig.status != ProviderStatus.CONNECTED
+                        state.copy(
+                            playlists = if (shouldPopulate) cachedPlaylists else state.playlists,
+                            cachedPlaylistCount = cachedPlaylists.size
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(cachedPlaylistCount = 0) }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            cacheRepository.recentlyPlayedTracks.collect { recents ->
+                _uiState.update { it.copy(recentlyPlayedTracks = recents) }
+            }
         }
     }
 
@@ -119,6 +172,27 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
                             BrokeifyPlaybackService.startOrUpdate(app, track, isPlaying, isLiked)
                         }
 
+                        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                            val trackId = mediaItem?.mediaId ?: return
+                            val queue = _uiState.value.queue
+                            val nextTrack = queue.find { it.id == trackId } ?: return
+                            val newIndex = queue.indexOfFirst { it.id == trackId }
+
+                            _uiState.update {
+                                it.copy(
+                                    currentTrack = nextTrack,
+                                    currentIndex = if (newIndex >= 0) newIndex else it.currentIndex,
+                                    positionSec = 0
+                                )
+                            }
+                            val isLiked = _uiState.value.likedTrackIds.contains(nextTrack.id) || nextTrack.isLiked
+                            BrokeifyPlaybackService.startOrUpdate(app, nextTrack, _uiState.value.isPlaying, isLiked)
+
+                            viewModelScope.launch(Dispatchers.IO) {
+                                cacheRepository.recordTrackPlayed(nextTrack)
+                            }
+                        }
+
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             if (playbackState == Player.STATE_ENDED) {
                                 handleTrackFinished()
@@ -126,7 +200,11 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
                         }
 
                         override fun onPlayerError(error: PlaybackException) {
-                            logEvent(LogLevel.WARN, "ExoPlayer", "Stream audio error: ${error.localizedMessage}")
+                            logEvent(LogLevel.WARN, "ExoPlayer", "Stream audio error: ${error.localizedMessage}. Advancing to next track...")
+                            viewModelScope.launch {
+                                delay(300)
+                                skipNext()
+                            }
                         }
                     })
                 }
@@ -277,6 +355,16 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun playPlaylist(playlist: Playlist, customTracks: List<Track>? = null) {
+        val playlistTracks = customTracks?.takeIf { it.isNotEmpty() }
+            ?: _uiState.value.tracks.filter { it.id in playlist.trackIds }.takeIf { it.isNotEmpty() }
+            ?: _uiState.value.tracks
+
+        if (playlistTracks.isEmpty()) return
+        logEvent(LogLevel.INFO, "Playlists", "Playing playlist '${playlist.name}' (${playlistTracks.size} tracks)")
+        playTrack(playlistTracks.first(), playlistTracks)
+    }
+
     fun playTrack(track: Track, customQueue: List<Track>? = null) {
         val baseQueue = customQueue ?: _uiState.value.queue.ifEmpty { _uiState.value.tracks }
         val index = baseQueue.indexOfFirst { it.id == track.id }
@@ -307,17 +395,29 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             ) + _uiState.value.playbackHistory
         }
 
-        // Feed ExoPlayer audio stream via /api/stream/{trackId}
+        // Feed ExoPlayer audio streams with the full queue so it transitions smoothly and gaplessly!
         exoPlayer?.let { player ->
-            if (track.streamUrl.isNotBlank()) {
-                try {
-                    val mediaItem = MediaItem.fromUri(track.streamUrl)
-                    player.setMediaItem(mediaItem)
+            try {
+                val validTracks = newQueue.filter { it.streamUrl.isNotBlank() }
+                if (validTracks.isNotEmpty()) {
+                    val mediaItems = validTracks.map { t ->
+                        MediaItem.Builder()
+                            .setMediaId(t.id)
+                            .setUri(t.streamUrl)
+                            .build()
+                    }
+                    val startIndex = validTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                    player.setMediaItems(mediaItems, startIndex, 0L)
                     player.prepare()
                     player.playWhenReady = true
-                } catch (e: Exception) {
-                    logEvent(LogLevel.WARN, "Playback", "Stream init: ${e.localizedMessage}")
+                } else if (track.streamUrl.isNotBlank()) {
+                    val singleItem = MediaItem.Builder().setMediaId(track.id).setUri(track.streamUrl).build()
+                    player.setMediaItem(singleItem)
+                    player.prepare()
+                    player.playWhenReady = true
                 }
+            } catch (e: Exception) {
+                logEvent(LogLevel.WARN, "Playback", "Stream init: ${e.localizedMessage}")
             }
         }
 
@@ -335,6 +435,11 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             )
         }
         logEvent(LogLevel.INFO, "Playback", "Started: ${track.title} [${track.format}]")
+
+        // Record in local Room database
+        viewModelScope.launch(Dispatchers.IO) {
+            cacheRepository.recordTrackPlayed(track)
+        }
 
         // Keep foreground service and notification active
         BrokeifyPlaybackService.startOrUpdate(getApplication(), track, true, isLiked)
@@ -377,6 +482,11 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             BrokeifyPlaybackService.startOrUpdate(getApplication(), track, _uiState.value.isPlaying, isCurrentLiked)
         }
 
+        // Update local Room database
+        viewModelScope.launch(Dispatchers.IO) {
+            cacheRepository.setTrackLiked(trackId, nextLikedState)
+        }
+
         val serverUrl = secureStorage.serverUrl
         val token = secureStorage.token
         if (serverUrl.isNotBlank()) {
@@ -398,6 +508,12 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun skipNext() {
+        val player = exoPlayer
+        if (player != null && player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+            return
+        }
+
         val queue = _uiState.value.queue
         if (queue.isEmpty()) return
 
@@ -423,6 +539,30 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+    }
+
+    fun skipPrevious() {
+        val player = exoPlayer
+        if (player != null && player.currentPosition > 3000L) {
+            player.seekTo(0L)
+            _uiState.update { it.copy(positionSec = 0) }
+            return
+        }
+        if (player != null && player.hasPreviousMediaItem()) {
+            player.seekToPreviousMediaItem()
+            return
+        }
+
+        val queue = _uiState.value.queue
+        if (queue.isEmpty()) return
+
+        val prevIndex = if (_uiState.value.currentIndex > 0) {
+            _uiState.value.currentIndex - 1
+        } else {
+            queue.size - 1
+        }
+
+        playTrack(queue[prevIndex])
     }
 
     fun toggleAutoplay() {
@@ -455,24 +595,6 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
-    fun skipPrevious() {
-        val queue = _uiState.value.queue
-        if (queue.isEmpty()) return
-
-        if (_uiState.value.positionSec > 3) {
-            seekTo(0)
-            return
-        }
-
-        val prevIndex = if (_uiState.value.currentIndex > 0) {
-            _uiState.value.currentIndex - 1
-        } else {
-            queue.size - 1
-        }
-
-        playTrack(queue[prevIndex])
-    }
-
     fun seekTo(seconds: Int) {
         exoPlayer?.seekTo((seconds * 1000).toLong())
         _uiState.update { it.copy(positionSec = seconds) }
@@ -481,6 +603,7 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
     fun toggleShuffle() {
         val next = !_uiState.value.shuffleEnabled
         _uiState.update { it.copy(shuffleEnabled = next) }
+        exoPlayer?.shuffleModeEnabled = next
         logEvent(LogLevel.INFO, "Playback", "Shuffle: ${if (next) "ON" else "OFF"}")
     }
 
@@ -491,6 +614,11 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             RepeatMode.ONE -> RepeatMode.OFF
         }
         _uiState.update { it.copy(repeatMode = next) }
+        exoPlayer?.repeatMode = when (next) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
     }
 
     fun setEqPreset(preset: EQPresetName) {
@@ -960,6 +1088,7 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
         _uiState.update {
             it.copy(
                 isSyncing = false,
+                isOfflineMode = false,
                 gatewayConfig = updatedConfig,
                 tracks = tracks,
                 playlists = playlists,
@@ -974,6 +1103,13 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
                 activeLibraryTab = 0 // Playlists visible first!
             )
         }
+
+        // Cache all tracks & playlists in local Room database for offline browsing
+        viewModelScope.launch(Dispatchers.IO) {
+            cacheRepository.cacheTracks(tracks, likedIds)
+            cacheRepository.cachePlaylists(playlists, favPlaylistIds)
+        }
+
         logEvent(
             LogLevel.SUCCESS,
             "Gateway",
@@ -1000,6 +1136,11 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             "Playlists",
             if (nextFavState) "Favorited playlist '$playlistId'" else "Unfavorited playlist '$playlistId'"
         )
+
+        // Update local Room database
+        viewModelScope.launch(Dispatchers.IO) {
+            cacheRepository.setPlaylistFavorite(playlistId, nextFavState)
+        }
 
         val serverUrl = secureStorage.serverUrl
         val token = secureStorage.token
@@ -1028,6 +1169,23 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _uiState.update { it.copy(isSyncing = true) }
             val health = BrokeifyGatewayClient.testConnection(serverUrl)
+
+            if (!health.success) {
+                // Connection lost or unreachable! Switch to Room offline cache mode so library is still browsable
+                _uiState.update {
+                    it.copy(
+                        isSyncing = false,
+                        isOfflineMode = true,
+                        gatewayConfig = it.gatewayConfig.copy(
+                            status = ProviderStatus.DISCONNECTED,
+                            lastMessage = "Offline Mode • Browsing Room cache (${it.tracks.size} tracks saved)"
+                        )
+                    )
+                }
+                logEvent(LogLevel.WARN, "Gateway", "Connection to Docker container lost. Switched to offline Room cache.")
+                return@launch
+            }
+
             val libraryResult = BrokeifyGatewayClient.fetchLibrary(serverUrl, token)
             val tracks = libraryResult.tracks
             val playlists = libraryResult.playlists
@@ -1037,6 +1195,7 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             _uiState.update {
                 it.copy(
                     isSyncing = false,
+                    isOfflineMode = false,
                     tracks = if (tracks.isNotEmpty()) tracks else it.tracks,
                     playlists = if (playlists.isNotEmpty()) playlists else it.playlists,
                     likedTrackIds = if (likedIds.isNotEmpty()) likedIds else it.likedTrackIds,
@@ -1045,20 +1204,26 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
                     currentTrack = it.currentTrack, // Keep null until user picks a song!
                     gatewayConfig = it.gatewayConfig.copy(
                         name = health.serverName.ifBlank { it.gatewayConfig.name },
-                        status = if (health.success) ProviderStatus.CONNECTED else ProviderStatus.ERROR,
+                        status = ProviderStatus.CONNECTED,
                         latencyMs = health.latencyMs,
                         trackCount = if (tracks.isNotEmpty()) tracks.size else health.totalTracks,
                         albumCount = if (libraryResult.albums.isNotEmpty()) libraryResult.albums.size else health.totalAlbums,
                         artistCount = if (libraryResult.artists.isNotEmpty()) libraryResult.artists.size else health.totalArtists,
                         playlistCount = if (playlists.isNotEmpty()) playlists.size else health.totalPlaylists,
                         version = health.serverVersion,
-                        lastMessage = if (health.success) {
-                            "Connected • ${if (tracks.isNotEmpty()) tracks.size else health.totalTracks} tracks (${health.latencyMs}ms)"
-                        } else {
-                            health.errorMessage ?: "Unreachable"
-                        }
+                        lastMessage = "Connected • ${if (tracks.isNotEmpty()) tracks.size else health.totalTracks} tracks (${health.latencyMs}ms)"
                     )
                 )
+            }
+
+            // Sync Room database with latest Docker library
+            viewModelScope.launch(Dispatchers.IO) {
+                if (tracks.isNotEmpty()) {
+                    cacheRepository.cacheTracks(tracks, likedIds)
+                }
+                if (playlists.isNotEmpty()) {
+                    cacheRepository.cachePlaylists(playlists, favPlaylistIds)
+                }
             }
         }
     }
@@ -1071,12 +1236,9 @@ class BrokeifyViewModel(application: Application) : AndroidViewModel(application
             it.copy(
                 gatewayConfig = ProviderConfig(
                     status = ProviderStatus.DISCONNECTED,
-                    lastMessage = "Disconnected"
+                    lastMessage = "Disconnected • Tap Sources to Reconnect"
                 ),
-                tracks = emptyList(),
-                playlists = emptyList(),
-                likedTrackIds = emptySet(),
-                queue = emptyList(),
+                isOfflineMode = it.tracks.isNotEmpty(),
                 currentTrack = null,
                 isPlaying = false,
                 positionSec = 0,
